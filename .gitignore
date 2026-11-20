@@ -1,0 +1,26 @@
+# Ignore compatibility symlink
+url_shortner
+
+# Binaries and build artifacts
+**/bin/
+**/*.exe
+**/*.out
+/url-shortner/server
+
+# Dependencies
+**/node_modules/
+node_modules/
+
+# OS specific files
+.DS_Store
+.DS_Store?
+._*
+
+# IDE specific files
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Logs
+*.log

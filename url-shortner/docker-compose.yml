@@ -1,0 +1,89 @@
+services:
+  # Primary Relational Store
+  postgres:
+    image: postgres:16-alpine
+    container_name: urlshortener_postgres
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: urlshortener
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./migrations/000001_init_schema.sql:/docker-entrypoint-initdb.d/000001_init_schema.sql:ro
+    ports:
+      - "5434:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d urlshortener"]
+      interval: 3s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
+
+  # In-Memory Cache & Central ID Range Dispenser
+  redis:
+    image: redis:7-alpine
+    container_name: urlshortener_redis
+    command: ["redis-server", "--appendonly", "yes"]
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 3s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
+
+  # Go Application Replica 1 (Stateless, independent in-memory ID range)
+  app1:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.backend
+    container_name: urlshortener_app1
+    environment:
+      PORT: "8080"
+      BASE_URL: "http://localhost"
+      DATABASE_URL: "postgres://postgres:postgres@postgres:5432/urlshortener?sslmode=disable"
+      REDIS_ADDR: "redis:6379"
+      ID_CHUNK_SIZE: "1000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
+  # Go Application Replica 2 (Stateless, independent in-memory ID range)
+  app2:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.backend
+    container_name: urlshortener_app2
+    environment:
+      PORT: "8080"
+      BASE_URL: "http://localhost"
+      DATABASE_URL: "postgres://postgres:postgres@postgres:5432/urlshortener?sslmode=disable"
+      REDIS_ADDR: "redis:6379"
+      ID_CHUNK_SIZE: "1000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
+  # Nginx Reverse Proxy, Load Balancer & Frontend Static Host
+  nginx:
+    image: nginx:alpine
+    container_name: urlshortener_nginx
+    ports:
+      - "80:80"
+    volumes:
+      - ./docker/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./web/dist:/usr/share/nginx/html:ro
+    depends_on:
+      - app1
+      - app2
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
